@@ -178,11 +178,11 @@ var BASE = 'https://www.googleapis.com/youtube/v3/';
 var currentCat = '', currentCatId = '', nextPageToken = '', currentVideoId = '', isLight = false;
 var chCache = {};
 var CAT_Q = {
-  '':     {us:'trending',           ph:'trending pilipinas',   gl:'japan music vocaloid'},
-  gaming: {us:'gaming gameplay',    ph:'gaming philippines',   gl:'gaming japan esports'},
-  music:  {us:'music official mv',  ph:'opm music pilipinas',  gl:'vocaloid hatsune miku'},
+  '':     {us:'trending',           ph:'trending pilipinas',   gl:'trending'},
+  gaming: {us:'gaming gameplay',    ph:'gaming philippines',   gl:'gaming esports'},
+  music:  {us:'music official mv',  ph:'opm music pilipinas',  gl:'music videos'},
   news:   {us:'news today',         ph:'balita pilipinas',     gl:'world news today'},
-  shows:  {us:'tv show episode',    ph:'teleserye philippines',gl:'anime episode english'}
+  shows:  {us:'tv show episode',    ph:'teleserye philippines',gl:'shows video'}
 };
 
 function $id(id){return document.getElementById(id);}
