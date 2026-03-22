@@ -65,7 +65,18 @@ body{background:var(--bg);color:var(--fg);font:12px/1.5 Tahoma,Verdana,sans-seri
 .vb:active{background:var(--acc);color:#fff}
 .vb.busy{opacity:.5;pointer-events:none}
 
-/* RECS */
+/* DOWNLOAD MODAL */
+#dlmodal{display:none;position:fixed;inset:0;z-index:300;background:rgba(0,0,0,.88);align-items:center;justify-content:center;padding:16px}
+#dlmodal.on{display:flex}
+#dlbox{background:var(--surf);border:1px solid var(--brd);border-radius:4px;width:100%;max-width:340px;padding:12px}
+#dlbox h3{font-size:12px;color:var(--fg);margin-bottom:8px;border-bottom:1px solid var(--brd);padding-bottom:6px}
+#dllinks{display:flex;flex-direction:column;gap:6px}
+.dllink{display:block;padding:8px 10px;background:#003f8a;border:1px solid #1a8de8;border-radius:3px;color:#7dd6ff;font-size:11px;text-decoration:none;text-align:center;word-break:break-all}
+.dllink:active{background:#1a8de8;color:#fff}
+.dllink b{display:block;font-size:12px;color:#fff;margin-bottom:2px}
+#dlclose{display:block;width:100%;margin-top:10px;padding:7px;background:none;border:1px solid var(--sub);color:var(--sub);font-size:11px;border-radius:3px;cursor:pointer;font-family:Tahoma,sans-serif}
+#dlclose:active{background:var(--sub);color:var(--bg)}
+#dlstatus{font-size:11px;color:var(--sub);text-align:center;padding:8px 0}
 #recsec{border-bottom:1px solid var(--brd)}
 #reclist .vc{padding:4px 8px}
 
@@ -166,6 +177,16 @@ body.light #foot .notice{background:#fffbe6;border-color:#e6c800;color:#7a6000}
     <div id="chdr">Comments <span style="font-weight:normal;font-size:10px">(view only)</span></div>
     <div id="clist"><div class="ld"><span class="spin"></span>Loading...</div></div>
     <button id="cmt-more" class="more-btn" onclick="loadMoreCmts()" style="display:none">Load more comments</button>
+  </div>
+</div>
+
+<!-- DOWNLOAD MODAL -->
+<div id="dlmodal">
+  <div id="dlbox">
+    <h3 id="dltitle">Download</h3>
+    <div id="dlstatus"><span class="spin"></span> Getting download link...</div>
+    <div id="dllinks"></div>
+    <button id="dlclose" onclick="closeDlModal()">Close</button>
   </div>
 </div>
 
@@ -501,88 +522,97 @@ function card(v,mini){
 }
 
 /* ---- DOWNLOAD ----
-   Strategy:
-   1. Try cobalt.tools API (best quality, all formats)
-   2. On CORS/fail try loader.to API (reliable fallback)
-   3. Final fallback: open savefrom.net with URL pre-filled (works in browser, no API needed)
+   Feature phone approach:
+   - No window.open() — feature phones have no multi-window support
+   - Show a download modal with a direct <a href> link the user taps
+   - Try cobalt.tools API for a direct stream URL
+   - If cobalt fails, show YouTube mobile link as fallback
+   - User just taps the link and the browser handles it natively
 ---- */
-function openLink(url){
-  var a=document.createElement('a');a.href=url;a.target='_blank';a.rel='noopener';
-  document.body.appendChild(a);a.click();setTimeout(function(){document.body.removeChild(a);},800);
+function closeDlModal(){
+  $('dlmodal').classList.remove('on');
+  $('dllinks').innerHTML='';
+  $('dlstatus').innerHTML='<span class="spin"></span> Getting link...';
+  $('dlstatus').style.display='block';
 }
 
-function tryCobalt(id,format){
+function showDlLink(format, url, note){
+  $('dlstatus').style.display='none';
+  var links=$('dllinks');
+  var a=document.createElement('a');
+  a.className='dllink';
+  a.href=url;
+  a.innerHTML='<b>Tap here to download '+format.toUpperCase()+'</b>'+esc(note);
+  links.appendChild(a);
+}
+
+function showDlFallback(id){
+  $('dlstatus').style.display='none';
+  var links=$('dllinks');
+  // YouTube mobile — user can use browser's built-in save/share
+  var a=document.createElement('a');
+  a.className='dllink';
+  a.href='https://m.youtube.com/watch?v='+id;
+  a.innerHTML='<b>Open on YouTube Mobile</b>Use your browser Save / Share option';
+  links.appendChild(a);
+  // Also offer cobalt.tools web page directly
+  var b=document.createElement('a');
+  b.className='dllink';
+  b.href='https://cobalt.tools/';
+  b.innerHTML='<b>Open cobalt.tools</b>Paste the YouTube link there to download';
+  links.appendChild(b);
+}
+
+function runDl(id, format, btn){
+  $('dltitle').textContent='Download '+format.toUpperCase();
+  $('dllinks').innerHTML='';
+  $('dlstatus').style.display='block';
+  $('dlstatus').innerHTML='<span class="spin"></span> Getting link...';
+  $('dlmodal').classList.add('on');
+  if(btn)btn.classList.add('busy');
+
   var isAudio=(format==='mp3'||format==='wav');
   var body={url:'https://www.youtube.com/watch?v='+id};
-  if(isAudio){body.downloadMode='audio';body.audioFormat=format==='wav'?'wav':'mp3';}
-  else{body.downloadMode='mute';body.videoQuality=format==='3gp'?'144':'720';}
-  return fetch('https://api.cobalt.tools/',{
+  if(isAudio){
+    body.downloadMode='audio';
+    body.audioFormat=(format==='wav'?'wav':'mp3');
+  } else {
+    body.downloadMode='auto';
+    body.videoQuality=(format==='3gp'?'144':'720');
+  }
+
+  fetch('https://api.cobalt.tools/',{
     method:'POST',
     headers:{'Accept':'application/json','Content-Type':'application/json'},
     body:JSON.stringify(body)
-  }).then(function(r){
-    if(!r.ok)throw new Error('cobalt '+r.status);
-    return r.json();
-  }).then(function(d){
-    // Handle all cobalt response types
-    if(d.status==='error'||d.error)throw new Error('cobalt error');
-    var url=d.url||null;
-    // picker response (multiple streams)
-    if(!url&&d.status==='picker'&&d.picker&&d.picker.length)url=d.picker[0].url;
-    if(!url)throw new Error('no url');
-    openLink(url);
-    return true;
+  })
+  .then(function(r){return r.json();})
+  .then(function(d){
+    if(btn)btn.classList.remove('busy');
+    var url=null;
+    if(d.url)url=d.url;
+    else if(d.status==='picker'&&d.picker&&d.picker.length){
+      // Multiple streams — show all options
+      $('dlstatus').style.display='none';
+      d.picker.forEach(function(p,i){
+        showDlLink(format, p.url, 'Option '+(i+1)+(p.quality?' - '+p.quality:''));
+      });
+      return;
+    }
+    if(url){
+      showDlLink(format, url, 'If download starts, you are done!');
+    } else {
+      showDlFallback(id);
+    }
+  })
+  .catch(function(){
+    if(btn)btn.classList.remove('busy');
+    showDlFallback(id);
   });
 }
 
-function tryLoader(id,format){
-  // loader.to supports: mp3, mp4, wav — maps 3gp to mp4 lowest
-  var fmt=format==='3gp'?'mp4':format;
-  var apiUrl='https://loader.to/api/button/?url='+encodeURIComponent('https://www.youtube.com/watch?v='+id)+'&f='+fmt;
-  return fetch(apiUrl)
-    .then(function(r){if(!r.ok)throw new Error('loader '+r.status);return r.json();})
-    .then(function(d){
-      var url=d.url||d.link||null;
-      if(!url)throw new Error('no url');
-      openLink(url);
-      return true;
-    });
-}
-
-function fallbackDl(id){
-  // savefrom.net accepts YouTube URLs directly in hash — most reliable browser fallback
-  openLink('https://en.savefrom.net/1-youtube-video-downloader/#url=https://www.youtube.com/watch?v='+id);
-}
-
-function runDl(id,format,btn){
-  if(btn)btn.classList.add('busy');
-  toast('Fetching '+format.toUpperCase()+'...',6000);
-  tryCobalt(id,format)
-    .then(function(){
-      if(btn)btn.classList.remove('busy');
-      toast(format.toUpperCase()+' ready — check new tab!');
-    })
-    .catch(function(){
-      // Try loader.to
-      tryLoader(id,format)
-        .then(function(){
-          if(btn)btn.classList.remove('busy');
-          toast(format.toUpperCase()+' ready — check new tab!');
-        })
-        .catch(function(){
-          if(btn)btn.classList.remove('busy');
-          toast('Opening download page...',2500);
-          fallbackDl(id);
-        });
-    });
-}
-
-function dlVid(format){
-  runDl(curId,format,$('dl-'+format));
-}
-function quickDl(id,format){
-  runDl(id,format,null);
-}
+function dlVid(format){runDl(curId,format,$('dl-'+format));}
+function quickDl(id,format){runDl(id,format,null);}
 
 /* ---- VIDEO MODAL ---- */
 function openVid(id,title,channel,pfp,subs,views,likes,verified,chanId){
