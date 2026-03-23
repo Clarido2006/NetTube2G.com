@@ -135,6 +135,20 @@ function cobaltFetch(videoId, format, quality) {
 
 // ── ROUTES ────────────────────────────────────────────────────
 
+// GET /api/debug — shows raw YouTube API response for diagnosis
+function handleDebug(res, q) {
+  yt('videos?part=snippet,statistics&chart=mostPopular&maxResults=3&regionCode=PH')
+    .then(function(r) {
+      sendJSON(res, {
+        status: r.status,
+        error: r.body && r.body.error,
+        itemCount: r.body && r.body.items && r.body.items.length,
+        firstItem: r.body && r.body.items && r.body.items[0] && r.body.items[0].id,
+        keyUsed: YT_KEY ? YT_KEY.substring(0,8)+'...' : 'NOT SET'
+      });
+    }).catch(function(e) { sendJSON(res, { fetchError: e.message }); });
+}
+
 // GET /api/feed?catId=&pageUS=&pagePH=
 function handleFeed(res, q) {
   var catId = q.catId || '';
@@ -146,6 +160,12 @@ function handleFeed(res, q) {
     yt('videos?part=snippet,statistics&chart=mostPopular&maxResults=10&regionCode=US' + cp + ppUS),
     yt('videos?part=snippet,statistics&chart=mostPopular&maxResults=10&regionCode=PH' + cp + ppPH)
   ]).then(function(results) {
+    // Check for API errors in the response body
+    var err0 = results[0].body && results[0].body.error;
+    var err1 = results[1].body && results[1].body.error;
+    if (err0) return sendError(res, 'YouTube US: ' + (err0.message || JSON.stringify(err0)));
+    if (err1) return sendError(res, 'YouTube PH: ' + (err1.message || JSON.stringify(err1)));
+
     var usItems = (results[0].body && results[0].body.items) || [];
     var phItems = (results[1].body && results[1].body.items) || [];
     var all = usItems.concat(phItems);
@@ -365,6 +385,7 @@ var server = http.createServer(function(req, res) {
   var q      = parsed.query;
 
   // Static index.html is served by GitHub Pages — server only handles /api/* and /dl
+  if (path === '/api/debug')     return handleDebug(res, q);
   if (path === '/api/feed')      return handleFeed(res, q);
   if (path === '/api/trending')  return handleTrending(res, q);
   if (path === '/api/rec')       return handleRec(res, q);
